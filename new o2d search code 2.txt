@@ -1,0 +1,851 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1.0">
+<title>Ultra Fast Sheet Manager</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+<style>
+*{margin:0;padding:0;box-sizing:border-box;font-family:'Inter',sans-serif;}
+body{background:#eef2f7;padding:6px;font-size:12px;color:#111827;}
+.container{width:100%;margin:auto;}
+
+.topbar{background:linear-gradient(135deg,#0F9D77,#0A6B55);padding:8px 12px;border-radius:10px;display:flex;justify-content:space-between;align-items:center;margin-bottom:6px;}
+.topbar h1{font-size:16px;font-weight:800;color:#fff;}
+.badge{background:rgba(255,255,255,.15);padding:4px 10px;border-radius:999px;font-size:10px;font-weight:700;color:#fff;}
+
+.card{background:#fff;padding:7px;border-radius:10px;margin-bottom:6px;border:1px solid #e5e7eb;}
+.connect-row{display:flex;gap:5px;flex-wrap:wrap;}
+
+/* Refresh panel */
+.refresh-panel{display:flex;gap:5px;flex-wrap:wrap;align-items:center;padding:7px 10px;background:#f0fdf4;border:1px solid #bbf7d0;border-radius:10px;margin-bottom:6px;}
+.btn-refresh{height:36px;padding:0 18px;border:none;border-radius:8px;cursor:pointer;font-size:13px;font-weight:800;background:linear-gradient(135deg,#0F9D77,#0A6B55);color:#fff;display:flex;align-items:center;gap:7px;transition:opacity .2s;white-space:nowrap;box-shadow:0 2px 8px rgba(15,157,119,.3);}
+.btn-refresh:disabled{opacity:.5;cursor:not-allowed;}
+.btn-refresh .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.4);border-top-color:#fff;border-radius:50%;animation:spin .6s linear infinite;}
+@keyframes spin{to{transform:rotate(360deg)}}
+.refresh-info{font-size:11px;color:#065f46;font-weight:600;}
+
+input,select{height:31px;border:1px solid #d1d5db;border-radius:7px;padding:0 8px;font-size:11px;outline:none;background:#fff;font-weight:500;}
+input:focus,select:focus{border-color:#0F9D77;}
+#sheetLink{flex:1;min-width:220px;}
+#sheetName{width:140px;}
+#savedSheets{width:170px;}
+
+button{height:31px;padding:0 12px;border:none;border-radius:7px;cursor:pointer;font-size:11px;font-weight:700;}
+.btn-green{background:#0F9D77;color:#fff;}
+.btn-red{background:#ef4444;color:#fff;}
+.status-msg{margin-top:5px;font-size:10px;font-weight:600;color:#6b7280;}
+
+/* Progress bar for loading */
+.progress-bar-wrap{height:3px;background:#e5e7eb;border-radius:2px;margin-top:4px;overflow:hidden;display:none;}
+.progress-bar-wrap.active{display:block;}
+.progress-bar{height:3px;background:linear-gradient(90deg,#0F9D77,#34d399);width:0%;border-radius:2px;transition:width .3s;}
+.progress-bar.indeterminate{animation:indeterminate 1.2s ease-in-out infinite;}
+@keyframes indeterminate{0%{width:0%;margin-left:0;}50%{width:60%;margin-left:20%;}100%{width:0%;margin-left:100%};}
+
+/* Stale data indicator */
+.stale-banner{background:#fffbeb;border:1px solid #fcd34d;border-radius:7px;padding:5px 10px;font-size:10px;font-weight:700;color:#92400e;display:none;margin-bottom:6px;align-items:center;gap:6px;}
+.stale-banner.visible{display:flex;}
+
+select.filter-active{border-color:#0F9D77;background:#f0fdf4;color:#166634;font-weight:700;}
+
+.toolbar{display:flex;gap:5px;flex-wrap:wrap;margin-bottom:6px;}
+#search{width:180px;}
+.searchbox{position:relative;}
+.suggestions{position:absolute;top:33px;left:0;width:100%;background:#fff;border-radius:8px;display:none;z-index:999;max-height:220px;overflow-y:auto;border:1px solid #e5e7eb;box-shadow:0 5px 20px rgba(0,0,0,.1);}
+.suggestions div{padding:7px 9px;font-size:11px;cursor:pointer;border-bottom:1px solid #f1f5f9;}
+.suggestions div:hover{background:#f0fdf4;}
+
+.stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(120px,1fr));gap:5px;margin-bottom:6px;}
+.stat-box{background:#fff;padding:8px;border-radius:10px;border:1px solid #e5e7eb;}
+.stat-box small{display:block;font-size:9px;font-weight:700;color:#6b7280;margin-bottom:3px;}
+.stat-box h2{font-size:18px;font-weight:800;}
+
+.table-box{background:#fff;border-radius:10px;overflow:hidden;border:1px solid #e5e7eb;}
+.table-wrap{overflow:auto;max-height:82vh;}
+table{border-collapse:collapse;width:100%;min-width:1200px;}
+th{background:#f8fafc;padding:7px 8px;font-size:10px;text-align:left;position:sticky;top:0;z-index:99;border-bottom:1px solid #e5e7eb;white-space:nowrap;font-weight:800;}
+th.vcol{background:#e8faf4;color:#065f46;border-left:2px solid #0F9D77;}
+th.vcol-q{background:#eff6ff;color:#1e3a8a;border-left:2px solid #3b82f6;}
+td{padding:5px 8px;font-size:11px;border-bottom:1px solid #f1f5f9;white-space:nowrap;font-weight:500;line-height:1.1;}
+tr:hover td{background:#f8fafc;}
+td.vcol-item{background:#f0fdf4;color:#065f46;font-weight:700;border-left:2px solid #0F9D77;}
+td.vcol-item .src{font-size:8px;font-weight:600;background:#bbf7d0;color:#166634;border-radius:4px;padding:1px 4px;margin-left:4px;}
+td.vcol-qty{background:#eff6ff;color:#1e40af;font-weight:700;border-left:2px solid #3b82f6;text-align:right;}
+td.vcol-qty.inherited{background:#fefce8;color:#854d0e;border-left:2px solid #eab308;}
+td.vcol-qty .src{font-size:8px;font-weight:600;border-radius:4px;padding:1px 4px;margin-left:3px;}
+td.vcol-qty .src.sf{background:#bfdbfe;color:#1e3a8a;}
+td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
+.status-pill{padding:3px 7px;border-radius:999px;font-size:10px;font-weight:800;display:inline-block;}
+.delivered{background:#dcfce7;color:#166634;}
+.pending{background:#fef3c7;color:#92400e;}
+.partial{background:#dbeafe;color:#1d4ed8;}
+.cancelled{background:#fee2e2;color:#991b1b;}
+.qty-green{color:#15803d;font-weight:800;}
+.qty-red{color:#dc2626;font-weight:800;}
+.loading-msg{padding:35px;text-align:center;font-size:14px;font-weight:700;color:#6b7280;}
+.error-msg{padding:20px;text-align:center;font-size:13px;font-weight:700;color:#dc2626;background:#fff5f5;}
+
+/* Row fade-in on fresh load */
+@keyframes rowFadeIn{from{opacity:0;transform:translateY(4px);}to{opacity:1;transform:none;}}
+.fresh-load tbody tr{animation:rowFadeIn .15s ease-out both;}
+
+.toast{position:fixed;bottom:16px;right:16px;z-index:9999;padding:10px 18px;border-radius:10px;font-size:12px;font-weight:700;pointer-events:none;box-shadow:0 4px 20px rgba(0,0,0,.15);transform:translateY(60px);opacity:0;transition:all .25s;}
+.toast.show{transform:translateY(0);opacity:1;}
+.toast.ok{background:#166634;color:#fff;}
+.toast.warn{background:#92400e;color:#fff;}
+.toast.err{background:#dc2626;color:#fff;}
+
+@media(max-width:768px){
+  .connect-row,.toolbar,.refresh-panel{flex-direction:column;}
+  #sheetName,#savedSheets,#search,#webAppUrl{width:100%;}
+  button,.btn-refresh{width:100%;}
+}
+</style>
+</head>
+<body>
+<div class="container">
+
+  <div class="topbar">
+    <h1>📋 Ultra Fast Sheet Manager</h1>
+    <div class="badge" id="badge">Ready</div>
+  </div>
+
+  <!-- Sheet Connect -->
+  <div class="card">
+    <div class="connect-row">
+      <select id="savedSheets" onchange="selectSavedSheet()">
+        <option value="">Saved Sheets</option>
+      </select>
+      <input type="text" id="sheetLink" placeholder="Google Sheet Link" />
+      <input type="text" id="sheetName" placeholder="Sheet Tab Name" />
+      <button class="btn-green" onclick="saveCurrentSheet()">Save</button>
+      <button class="btn-green" onclick="loadSheet()">Load</button>
+      <button class="btn-red"   onclick="deleteSavedSheet()">Delete</button>
+    </div>
+    <div class="status-msg" id="statusMsg">
+      Sheet "Anyone with link" pe share karo &middot;
+      Col M,N,P hidden &middot;
+      <span style="color:#0F9D77">🟩 Item(E/G)</span> &amp;
+      <span style="color:#3b82f6">🔵 Qty(F↑)</span> auto-add honge
+    </div>
+    <div class="progress-bar-wrap" id="progressWrap">
+      <div class="progress-bar indeterminate" id="progressBar"></div>
+    </div>
+  </div>
+
+  <!-- Stale data banner -->
+  <div class="stale-banner" id="staleBanner">
+    ⚡ Purana cached data dikh raha hai — background mein fresh data aa raha hai...
+  </div>
+
+  <!-- ✅ REFRESH EXPANDED DATA PANEL -->
+  <div class="refresh-panel">
+    <button class="btn-refresh" id="refreshBtn" onclick="refreshExpandedData()">
+      <span id="refreshIcon">🔄</span>
+      <span id="refreshLabel">Refresh EXPANDED DATA</span>
+    </button>
+    <span class="refresh-info">&#9889; Ye button dabao — o2d Web ka data EXPANDED DATA mein update ho jaayega</span>
+  </div>
+
+  <!-- Filters Toolbar -->
+  <div class="toolbar">
+    <div class="searchbox">
+      <input type="text" id="search" placeholder="Search..." oninput="doSearch()" autocomplete="off" />
+      <div class="suggestions" id="suggestions"></div>
+    </div>
+    <select id="filterB" onchange="onFilterChange('filterB')"><option value="">Cust PO</option></select>
+    <select id="filterD" onchange="onFilterChange('filterD')"><option value="">Company</option></select>
+    <select id="filterG" onchange="onFilterChange('filterG')"><option value="">Send Item</option></select>
+    <select id="filterK" onchange="onFilterChange('filterK')"><option value="">Pending Item</option></select>
+    <select id="filterQ" onchange="onFilterChange('filterQ')"><option value="">Status</option></select>
+    <button class="btn-red" onclick="clearFilters()">Reset</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="stats">
+    <div class="stat-box"><small>Total Rows</small><h2 id="sTotalRows">0</h2></div>
+    <div class="stat-box"><small>Total Qty</small><h2 id="sTotalQty">0</h2></div>
+    <div class="stat-box"><small>Send Qty</small><h2 id="sSendQty">0</h2></div>
+    <div class="stat-box"><small>Pending Qty</small><h2 id="sPendingQty">0</h2></div>
+    <div class="stat-box"><small>Filtered</small><h2 id="sFiltered">0</h2></div>
+  </div>
+
+  <!-- Table -->
+  <div class="table-box">
+    <div class="table-wrap">
+      <table id="mainTable">
+        <thead id="thead"></thead>
+        <tbody id="tbody"><tr><td class="loading-msg">Google Sheet load karo...</td></tr></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+<div class="toast" id="toast"></div>
+
+<script>
+// =====================================================================
+// GLOBALS
+// =====================================================================
+var allData      = [];
+var filteredData = [];
+var headers      = [];
+var visibleCols  = [];
+var savedSheets  = [];
+
+var HIDDEN = {12:true, 13:true, 15:true};
+var VCOL_ITEM = -1;
+var VCOL_QTY  = -2;
+var FILTER_IDS = ['filterB','filterD','filterG','filterK','filterQ'];
+
+// =====================================================================
+// CACHE HELPERS — localStorage mein data store karo
+// =====================================================================
+var CACHE_PREFIX = 'ufsm_cache_';
+var CACHE_TS_PREFIX = 'ufsm_ts_';
+
+function getCacheKey(sheetId, sheetName) {
+  return CACHE_PREFIX + sheetId + '_' + sheetName;
+}
+
+function saveToCache(sheetId, sheetName, parsed) {
+  try {
+    var key = getCacheKey(sheetId, sheetName);
+    localStorage.setItem(key, JSON.stringify(parsed));
+    localStorage.setItem(CACHE_TS_PREFIX + sheetId + '_' + sheetName, Date.now().toString());
+  } catch(e) { /* storage full ho toh ignore */ }
+}
+
+function loadFromCache(sheetId, sheetName) {
+  try {
+    var key = getCacheKey(sheetId, sheetName);
+    var raw = localStorage.getItem(key);
+    if (!raw) return null;
+    return JSON.parse(raw);
+  } catch(e) { return null; }
+}
+
+function getCacheAge(sheetId, sheetName) {
+  try {
+    var ts = localStorage.getItem(CACHE_TS_PREFIX + sheetId + '_' + sheetName);
+    if (!ts) return Infinity;
+    return (Date.now() - parseInt(ts, 10)) / 1000; // seconds
+  } catch(e) { return Infinity; }
+}
+
+// =====================================================================
+// INIT
+// =====================================================================
+window.onload = function() {
+  loadSavedSheetsList();
+  initToggleSelects();
+  try {
+    var last = localStorage.getItem('lastSheet');
+    if (last) {
+      var obj = JSON.parse(last);
+      document.getElementById('sheetLink').value = obj.link || '';
+      document.getElementById('sheetName').value = obj.name || '';
+      loadSheet();
+    }
+  } catch(e) {}
+};
+
+// =====================================================================
+// REFRESH EXPANDED DATA — hardcoded web app URL
+// =====================================================================
+var WEB_APP_URL = 'https://script.google.com/macros/s/AKfycbyLgnqzpdvET3w1cJf4WkZV-O25GHfrRcKYJjkU859ETscXRV-eL9jhKtRgQCnHDbKPnw/exec';
+
+var _refreshScript = null;
+var _refreshTimer  = null;
+
+function refreshExpandedData() {
+  var url = WEB_APP_URL;
+  var btn   = document.getElementById('refreshBtn');
+  var icon  = document.getElementById('refreshIcon');
+  var label = document.getElementById('refreshLabel');
+  btn.disabled = true;
+  icon.outerHTML  = '<span id="refreshIcon" class="spin"></span>';
+  label.textContent = 'Refreshing...';
+
+  var cbName = '_refresh_' + Date.now();
+  // ⚡ Cache bust: timestamp add karo
+  var sep = url.indexOf('?') !== -1 ? '&' : '?';
+  var fullUrl = url + sep + 'callback=' + cbName + '&_t=' + Date.now();
+
+  function cleanup() {
+    clearTimeout(_refreshTimer);
+    try { delete window[cbName]; } catch(e) { window[cbName] = undefined; }
+    if (_refreshScript && _refreshScript.parentNode) {
+      _refreshScript.parentNode.removeChild(_refreshScript);
+    }
+    _refreshScript = null;
+    var btn2 = document.getElementById('refreshBtn');
+    var icon2 = document.getElementById('refreshIcon');
+    var label2 = document.getElementById('refreshLabel');
+    if (btn2) btn2.disabled = false;
+    if (icon2) icon2.outerHTML = '<span id="refreshIcon">🔄</span>';
+    if (label2) label2.textContent = 'Refresh EXPANDED DATA';
+  }
+
+  window[cbName] = function(response) {
+    cleanup();
+    if (response && response.status === 'ok') {
+      showToast('✅ EXPANDED DATA update! Sheet reload karo.', 'ok');
+    } else {
+      showToast('❌ ' + (response && response.message ? response.message : 'Error aaya'), 'err');
+    }
+  };
+
+  // 20s timeout (GAS cold start max ~15s)
+  _refreshTimer = setTimeout(function() {
+    cleanup();
+    showToast('⏱️ Timeout — Script slow hai ya URL galat hai', 'err');
+  }, 20000);
+
+  _refreshScript = document.createElement('script');
+  _refreshScript.src = fullUrl;
+  _refreshScript.onerror = function() {
+    cleanup();
+    showToast('❌ URL galat hai ya Script deploy nahi hui', 'err');
+  };
+  document.head.appendChild(_refreshScript);
+}
+
+// =====================================================================
+// TOGGLE SELECT
+// =====================================================================
+function initToggleSelects() {
+  FILTER_IDS.forEach(function(id) {
+    var sel = document.getElementById(id);
+    var prev = '';
+    sel.addEventListener('mousedown', function() { prev = sel.value; });
+    sel.addEventListener('click', function() {
+      if (sel.value === prev && prev !== '') {
+        sel.value = '';
+        applyFilterStyle(id);
+        doSearch();
+        showToast('Filter hata diya', 'warn');
+      }
+      prev = sel.value;
+    });
+  });
+}
+
+function applyFilterStyle(id) {
+  var sel = document.getElementById(id);
+  if (sel.value && sel.value !== '') sel.classList.add('filter-active');
+  else sel.classList.remove('filter-active');
+}
+
+function onFilterChange(id) {
+  applyFilterStyle(id);
+  doSearch();
+}
+
+// =====================================================================
+// SAVED SHEETS
+// =====================================================================
+function saveCurrentSheet() {
+  var link = document.getElementById('sheetLink').value.trim();
+  var name = document.getElementById('sheetName').value.trim();
+  if (!link || !name) { alert('Link aur Sheet Tab Name daalo'); return; }
+  savedSheets = JSON.parse(localStorage.getItem('savedSheets') || '[]');
+  for (var i = 0; i < savedSheets.length; i++) {
+    if (savedSheets[i].link === link && savedSheets[i].name === name) {
+      showToast('Already saved', 'warn'); return;
+    }
+  }
+  savedSheets.push({link: link, name: name});
+  localStorage.setItem('savedSheets', JSON.stringify(savedSheets));
+  loadSavedSheetsList();
+  showToast('Sheet save ho gayi', 'ok');
+}
+
+function loadSavedSheetsList() {
+  savedSheets = JSON.parse(localStorage.getItem('savedSheets') || '[]');
+  var sel = document.getElementById('savedSheets');
+  var html = '<option value="">Saved Sheets</option>';
+  for (var i = 0; i < savedSheets.length; i++) {
+    html += '<option value="' + i + '">' + savedSheets[i].name + '</option>';
+  }
+  sel.innerHTML = html;
+}
+
+function selectSavedSheet() {
+  var idx = document.getElementById('savedSheets').value;
+  if (idx === '') return;
+  var obj = savedSheets[parseInt(idx, 10)];
+  document.getElementById('sheetLink').value = obj.link;
+  document.getElementById('sheetName').value = obj.name;
+  loadSheet();
+}
+
+function deleteSavedSheet() {
+  var idx = document.getElementById('savedSheets').value;
+  if (idx === '') { alert('Pehle sheet select karo'); return; }
+  savedSheets.splice(parseInt(idx, 10), 1);
+  localStorage.setItem('savedSheets', JSON.stringify(savedSheets));
+  loadSavedSheetsList();
+  showToast('Deleted', 'warn');
+}
+
+// =====================================================================
+// EXTRACT SHEET ID
+// =====================================================================
+function extractSheetId(url) {
+  if (url.indexOf('/d/') !== -1) return url.split('/d/')[1].split('/')[0];
+  return url.trim();
+}
+
+// =====================================================================
+// JSONP GVIZ LOADER — with CACHE BUSTING
+// =====================================================================
+var _jsonpTimer = null;
+var _jsonpScript = null;
+
+function loadGvizJsonp(sheetId, sheetName, onSuccess, onError) {
+  // Pehle agar koi purana script request chal raha ho, cancel karo
+  if (_jsonpScript && _jsonpScript.parentNode) {
+    _jsonpScript.parentNode.removeChild(_jsonpScript);
+    _jsonpScript = null;
+  }
+  clearTimeout(_jsonpTimer);
+
+  var cbName = '_gviz_' + Date.now() + '_' + Math.floor(Math.random() * 9999);
+
+  function cleanup() {
+    clearTimeout(_jsonpTimer);
+    try { delete window[cbName]; } catch(e) { window[cbName] = undefined; }
+    if (_jsonpScript && _jsonpScript.parentNode) _jsonpScript.parentNode.removeChild(_jsonpScript);
+    _jsonpScript = null;
+  }
+
+  window[cbName] = function(response) {
+    cleanup();
+    try {
+      if (!response || !response.table) throw new Error('Google se empty response');
+      onSuccess(parseGvizTable(response.table));
+    } catch(e) { onError(e); }
+  };
+
+  _jsonpTimer = setTimeout(function() {
+    cleanup();
+    onError(new Error('Timeout — 15s mein load nahi hua'));
+  }, 15000);
+
+  var tqx = 'reqId:0;responseHandler:' + cbName;
+
+  // ⚡ KEY FIX: &_t= cache buster — browser same URL cache nahi karega
+  var url = 'https://docs.google.com/spreadsheets/d/' + sheetId +
+            '/gviz/tq?sheet=' + encodeURIComponent(sheetName) +
+            '&tqx=' + encodeURIComponent(tqx) +
+            '&_t=' + Date.now(); // <-- CACHE BUSTER
+
+  _jsonpScript = document.createElement('script');
+  _jsonpScript.src = url;
+  _jsonpScript.onerror = function() {
+    cleanup();
+    onError(new Error('Sheet ID galat ya internet nahi'));
+  };
+  document.head.appendChild(_jsonpScript);
+}
+
+// =====================================================================
+// PARSE GVIZ
+// =====================================================================
+function parseGvizTable(table) {
+  if (!table || !table.cols) throw new Error('No table data');
+  var colLetters = 'ABCDEFGHIJKLMNOPQRSTUVWXYZ';
+  var cols = [];
+  for (var c = 0; c < table.cols.length; c++) {
+    var col = table.cols[c];
+    var label = (col.label && col.label.trim()) ? col.label.trim() :
+                (col.id   && col.id.trim()   ) ? col.id.trim()    :
+                (colLetters[c] || ('Col' + (c+1)));
+    cols.push(label);
+  }
+  var rows = [];
+  for (var r = 0; r < table.rows.length; r++) {
+    var cells = table.rows[r].c;
+    var obj = {}; var allEmpty = true;
+    for (var ci = 0; ci < cols.length; ci++) {
+      var cell = (cells && cells[ci]) ? cells[ci] : null;
+      var val = '';
+      if (cell && cell.v !== null && cell.v !== undefined) {
+        val = (cell.f !== undefined && cell.f !== null) ? String(cell.f) : String(cell.v);
+        if (val !== '') allEmpty = false;
+      }
+      obj[cols[ci]] = val;
+    }
+    if (!allEmpty) rows.push(obj);
+  }
+  return {cols: cols, rows: rows};
+}
+
+// =====================================================================
+// PROCESS PARSED DATA — allData/visibleCols build karo
+// =====================================================================
+function processData(parsed) {
+  headers = parsed.cols;
+  visibleCols = [];
+  for (var i = 0; i < headers.length; i++) {
+    if (HIDDEN[i]) continue;
+    if (i === 14) {
+      visibleCols.push({label:'📦 Item (E/G)', realIdx:VCOL_ITEM, vctype:'item'});
+      visibleCols.push({label:'🔢 Qty (F↑)',   realIdx:VCOL_QTY,  vctype:'qty'});
+    }
+    visibleCols.push({label:headers[i], realIdx:i});
+  }
+  var lastQty = '';
+  allData = parsed.rows.map(function(row) {
+    var eVal = (headers[4] && row[headers[4]]) ? String(row[headers[4]]).trim() : '';
+    var gVal = (headers[6] && row[headers[6]]) ? String(row[headers[6]]).trim() : '';
+    var fVal = (headers[5] && row[headers[5]]) ? String(row[headers[5]]).trim() : '';
+    var effItem = eVal || gVal;
+    var effSrc  = eVal ? 'E' : (gVal ? 'G' : '');
+    var effQty = '', inherited = false;
+    if (fVal !== '') { lastQty = fVal; effQty = fVal; }
+    else             { effQty = lastQty; inherited = (lastQty !== ''); }
+    var searchStr = '';
+    for (var key in row) {
+      if (Object.prototype.hasOwnProperty.call(row, key)) searchStr += ' ' + row[key];
+    }
+    searchStr += ' ' + effItem + ' ' + effQty;
+    return Object.assign({}, row, {
+      _effItem:effItem, _effSrc:effSrc,
+      _effQty:effQty,  _effInherited:inherited,
+      _search:searchStr.toLowerCase()
+    });
+  });
+  filteredData = allData.slice();
+}
+
+// =====================================================================
+// LOAD SHEET — Stale-while-revalidate strategy
+// 1. Cache data turant dikhao (instant)
+// 2. Background mein fresh data fetch karo
+// =====================================================================
+function loadSheet() {
+  var link      = document.getElementById('sheetLink').value.trim();
+  var sheetName = document.getElementById('sheetName').value.trim();
+  if (!link || !sheetName) { alert('Sheet Link aur Tab Name daalo'); return; }
+
+  var sheetId = extractSheetId(link);
+
+  // STEP 1: Cache se instant display
+  var cached = loadFromCache(sheetId, sheetName);
+  if (cached && cached.rows && cached.rows.length) {
+    var ageSeconds = getCacheAge(sheetId, sheetName);
+    var ageStr = ageSeconds < 60 ? Math.round(ageSeconds) + 's' :
+                 ageSeconds < 3600 ? Math.round(ageSeconds/60) + 'm' :
+                 Math.round(ageSeconds/3600) + 'h';
+
+    processData(cached);
+    document.getElementById('thead').removeAttribute('data-loaded');
+    renderTable(filteredData, false); // no animation for stale
+    buildFilters();
+    updateStats(filteredData);
+    setBadge('⚡ Cache');
+    setStatus('Cache se: ' + cached.rows.length + ' rows (age: ' + ageStr + ') — Fresh data aa raha hai...');
+
+    // Stale banner dikhao
+    document.getElementById('staleBanner').classList.add('visible');
+
+    // Progress bar show karo
+    showProgress();
+  } else {
+    // Koi cache nahi — normal loading state
+    setBadge('Loading...');
+    setStatus('Data fetch ho raha hai...');
+    document.getElementById('tbody').innerHTML = '<tr><td class="loading-msg">⚡ Loading...</td></tr>';
+    document.getElementById('thead').innerHTML = '';
+    document.getElementById('thead').removeAttribute('data-loaded');
+    showProgress();
+  }
+
+  // STEP 2: Background mein fresh data fetch
+  localStorage.setItem('lastSheet', JSON.stringify({link: link, name: sheetName}));
+
+  loadGvizJsonp(sheetId, sheetName,
+    function(parsed) {
+      hideProgress();
+      document.getElementById('staleBanner').classList.remove('visible');
+
+      if (!parsed.rows || !parsed.rows.length) {
+        setBadge('Error');
+        setStatus('Data nahi mila — Tab name check karo (case-sensitive)');
+        document.getElementById('tbody').innerHTML =
+          '<tr><td class="error-msg">Koi row nahi aayi.<br>Tab ka naam exactly wahi likho jo Google Sheet mein hai.</td></tr>';
+        return;
+      }
+
+      // Cache mein save karo
+      saveToCache(sheetId, sheetName, parsed);
+
+      // Process & render fresh data
+      processData(parsed);
+      document.getElementById('thead').removeAttribute('data-loaded');
+      renderTable(filteredData, true); // with animation = fresh
+      buildFilters();
+      updateStats(filteredData);
+      setBadge('✅ Live');
+      setStatus('✅ Fresh: ' + parsed.rows.length + ' rows · Col M,N,P hidden · Item(E/G) & Qty(F↑) added');
+      showToast('✅ Fresh data loaded!', 'ok');
+    },
+    function(err) {
+      hideProgress();
+      document.getElementById('staleBanner').classList.remove('visible');
+
+      // Agar cache data tha toh error sirf toast mein dikhao
+      if (allData.length > 0) {
+        setBadge('⚠️ Offline');
+        setStatus('⚠️ Fresh data nahi aaya (' + err.message + ') — Cache data dikh raha hai');
+        showToast('⚠️ Cache data dikh raha hai', 'warn');
+      } else {
+        setBadge('Error');
+        setStatus('❌ ' + err.message);
+        document.getElementById('tbody').innerHTML =
+          '<tr><td class="error-msg">❌ ' + err.message + '<br><br>' +
+          '<b>Checklist:</b><br>' +
+          '1. Share → "Anyone with the link" → Viewer<br>' +
+          '2. Tab name exactly wahi (capital/small matter karta hai)<br>' +
+          '3. Sheet URL sahi paste karo</td></tr>';
+      }
+      console.error(err);
+    }
+  );
+}
+
+// =====================================================================
+// PROGRESS BAR
+// =====================================================================
+function showProgress() {
+  document.getElementById('progressWrap').classList.add('active');
+}
+function hideProgress() {
+  document.getElementById('progressWrap').classList.remove('active');
+}
+
+// =====================================================================
+// RENDER TABLE
+// =====================================================================
+function renderTable(data, animate) {
+  var thead = document.getElementById('thead');
+  var tbody = document.getElementById('tbody');
+  var table = document.getElementById('mainTable');
+
+  if (!data.length) {
+    tbody.innerHTML = '<tr><td class="loading-msg" colspan="99">No matching data</td></tr>';
+    return;
+  }
+  if (!thead.getAttribute('data-loaded')) {
+    var hHtml = '<tr><th>#</th>';
+    for (var vi = 0; vi < visibleCols.length; vi++) {
+      var vc = visibleCols[vi];
+      if      (vc.vctype === 'item') hHtml += '<th class="vcol">' + vc.label + '</th>';
+      else if (vc.vctype === 'qty')  hHtml += '<th class="vcol-q">' + vc.label + '</th>';
+      else                           hHtml += '<th>' + vc.label + '</th>';
+    }
+    hHtml += '</tr>';
+    thead.innerHTML = hHtml;
+    thead.setAttribute('data-loaded', '1');
+  }
+
+  // Animation class add/remove
+  if (animate) { table.classList.add('fresh-load'); }
+  else { table.classList.remove('fresh-load'); }
+
+  var colQ = headers[16];
+  var html = '';
+  // ⚡ DocumentFragment virtual DOM — faster rendering
+  for (var ri = 0; ri < data.length; ri++) {
+    var row = data[ri];
+    html += '<tr><td>' + (ri+1) + '</td>';
+    for (var ci = 0; ci < visibleCols.length; ci++) {
+      var col = visibleCols[ci];
+      var idx = col.realIdx;
+      if (idx === VCOL_ITEM) {
+        var ival = row._effItem || '—';
+        var isrc = row._effSrc  || '';
+        html += '<td class="vcol-item" title="' + ival + '">' + ival + '<span class="src">' + isrc + '</span></td>';
+        continue;
+      }
+      if (idx === VCOL_QTY) {
+        var qval = row._effQty || '—';
+        var qinh = row._effInherited;
+        var qbadge = qinh ? '↑prev' : 'F';
+        var qcls   = qinh ? 'sf si' : 'sf';
+        html += '<td class="vcol-qty' + (qinh?' inherited':'') + '" title="' +
+          (qinh?'Upar wali row se aaya':'Col F se') + '">' +
+          qval + '<span class="src ' + qcls + '">' + qbadge + '</span></td>';
+        continue;
+      }
+      var hname = headers[idx];
+      var raw   = (hname && row[hname] !== undefined) ? row[hname] : '';
+      var display = raw;
+      if (hname === colQ) {
+        var sv = String(raw).toLowerCase();
+        var sc = 'pending';
+        if (sv.indexOf('deliver') !== -1) sc = 'delivered';
+        if (sv.indexOf('partial') !== -1) sc = 'partial';
+        if (sv.indexOf('cancel')  !== -1) sc = 'cancelled';
+        display = '<span class="status-pill ' + sc + '">' + raw + '</span>';
+      }
+      if (idx === 7)  display = '<span class="qty-green">' + raw + '</span>';
+      if (idx === 10) display = '<span class="qty-red">'   + raw + '</span>';
+      html += '<td title="' + String(raw).replace(/"/g,'&quot;') + '">' + display + '</td>';
+    }
+    html += '</tr>';
+  }
+  tbody.innerHTML = html;
+
+  // Remove animation class after done (reset for next time)
+  if (animate) {
+    setTimeout(function() { table.classList.remove('fresh-load'); }, 500);
+  }
+}
+
+// =====================================================================
+// FILTERS
+// =====================================================================
+var FILTER_CFG = [
+  {id:'filterB', colIdx:1,  ph:'Cust PO'},
+  {id:'filterD', colIdx:3,  ph:'Company'},
+  {id:'filterG', colIdx:6,  ph:'Send Item'},
+  {id:'filterK', colIdx:10, ph:'Pending Item'},
+  {id:'filterQ', colIdx:16, ph:'Status'}
+];
+
+function buildFilters()      { refreshDropdowns(allData); }
+function refreshDropdowns(base) {
+  for (var fi = 0; fi < FILTER_CFG.length; fi++) {
+    var cfg = FILTER_CFG[fi];
+    var sel = document.getElementById(cfg.id);
+    var col = headers[cfg.colIdx];
+    if (!col) continue;
+    var cur = sel.value;
+    var seen = {}, vals = [];
+    for (var ri = 0; ri < base.length; ri++) {
+      var v = base[ri][col];
+      if (v && String(v).trim() !== '' && !seen[v]) { seen[v]=true; vals.push(v); }
+    }
+    vals.sort();
+    var html = '<option value="">' + cfg.ph + '</option>';
+    for (var vi = 0; vi < vals.length; vi++) html += '<option value="' + vals[vi] + '">' + vals[vi] + '</option>';
+    sel.innerHTML = html;
+    if (cur && seen[cur]) sel.value = cur;
+    applyFilterStyle(cfg.id);
+  }
+}
+
+// =====================================================================
+// SEARCH
+// =====================================================================
+function doSearch() {
+  var text = document.getElementById('search').value.toLowerCase().trim();
+  var bv=document.getElementById('filterB').value, dv=document.getElementById('filterD').value;
+  var gv=document.getElementById('filterG').value, kv=document.getElementById('filterK').value;
+  var qv=document.getElementById('filterQ').value;
+  var colB=headers[1], colD=headers[3], colG=headers[6], colK=headers[10], colQ=headers[16];
+  filteredData = [];
+  for (var i = 0; i < allData.length; i++) {
+    var row = allData[i];
+    if (text && row._search.indexOf(text)===-1) continue;
+    if (bv && row[colB]!==bv) continue;
+    if (dv && row[colD]!==dv) continue;
+    if (gv && row[colG]!==gv) continue;
+    if (kv && row[colK]!==kv) continue;
+    if (qv && row[colQ]!==qv) continue;
+    filteredData.push(row);
+  }
+  renderTable(filteredData, false);
+  updateStats(filteredData);
+  refreshDropdowns(filteredData);
+  buildSuggestions(text);
+}
+
+function buildSuggestions(text) {
+  var box = document.getElementById('suggestions');
+  if (!text) { box.style.display='none'; return; }
+  var matches = [];
+  outer:
+  for (var i = 0; i < allData.length; i++) {
+    var row = allData[i];
+    for (var key in row) {
+      if (!Object.prototype.hasOwnProperty.call(row,key)) continue;
+      if (key.charAt(0)==='_') continue;
+      var val = String(row[key]);
+      if (val.toLowerCase().indexOf(text)!==-1 && val.trim()!=='') {
+        var dup = false;
+        for (var m=0;m<matches.length;m++) { if (matches[m]===val) { dup=true; break; } }
+        if (!dup) { matches.push(val); if (matches.length>=10) break outer; }
+      }
+    }
+  }
+  var html = '';
+  for (var mi = 0; mi < matches.length; mi++) {
+    var escaped = matches[mi].replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    html += '<div onclick="pickSuggestion(\'' + escaped + '\')">' + matches[mi] + '</div>';
+  }
+  box.innerHTML = html;
+  box.style.display = matches.length ? 'block' : 'none';
+}
+
+function pickSuggestion(v) {
+  document.getElementById('search').value = v;
+  document.getElementById('suggestions').style.display = 'none';
+  doSearch();
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('.searchbox')) document.getElementById('suggestions').style.display='none';
+});
+
+// =====================================================================
+// STATS
+// =====================================================================
+function updateStats(data) {
+  document.getElementById('sTotalRows').textContent = allData.length.toLocaleString();
+  document.getElementById('sFiltered').textContent  = data.length.toLocaleString();
+  var colF=headers[5], colH=headers[7], colL=headers[11];
+  var tq=0, sq=0, pq=0;
+  for (var i=0; i<data.length; i++) {
+    var r=data[i];
+    tq += parseFloat(String(r[colF]||'0').replace(/,/g,''))||0;
+    sq += parseFloat(String(r[colH]||'0').replace(/,/g,''))||0;
+    pq += parseFloat(String(r[colL]||'0').replace(/,/g,''))||0;
+  }
+  document.getElementById('sTotalQty').textContent   = tq.toLocaleString();
+  document.getElementById('sSendQty').textContent    = sq.toLocaleString();
+  document.getElementById('sPendingQty').textContent = pq.toLocaleString();
+}
+
+// =====================================================================
+// CLEAR FILTERS
+// =====================================================================
+function clearFilters() {
+  document.getElementById('search').value = '';
+  for (var i=0; i<FILTER_IDS.length; i++) {
+    document.getElementById(FILTER_IDS[i]).value = '';
+    applyFilterStyle(FILTER_IDS[i]);
+  }
+  doSearch();
+}
+
+// =====================================================================
+// UI HELPERS
+// =====================================================================
+function setBadge(txt) { document.getElementById('badge').textContent = txt; }
+function setStatus(txt){ document.getElementById('statusMsg').textContent = txt; }
+
+var toastTimer;
+function showToast(msg, type) {
+  var t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast ' + (type||'ok') + ' show';
+  clearTimeout(toastTimer);
+  toastTimer = setTimeout(function(){ t.classList.remove('show'); }, 3000);
+}
+</script>
+</body>
+</html>
