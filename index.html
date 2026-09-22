@@ -202,6 +202,7 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
       </div>
     </div>
 
+    <button class="btn-green" id="exportBtn" onclick="exportToExcel()">📊 Export Excel</button>
     <button class="btn-red" onclick="clearFilters()">Reset</button>
   </div>
 
@@ -226,6 +227,7 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
 </div>
 <div class="toast" id="toast"></div>
 
+<script src="https://cdnjs.cloudflare.com/ajax/libs/exceljs/4.4.0/exceljs.min.js"></script>
 <script>
 // =====================================================================
 // GLOBALS
@@ -1071,6 +1073,131 @@ function clearFilters() {
   status2Selected = '';
   renderStatus2List();
   doSearch();
+}
+
+// =====================================================================
+// EXPORT TO EXCEL — jo table abhi screen pe dikh rahi hai (filtered)
+// wahi headings ke saath badiya formatted .xlsx export hoti hai
+// =====================================================================
+function stripEmoji(s) {
+  return String(s || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
+}
+
+async function exportToExcel() {
+  if (!filteredData.length) { showToast('Koi data nahi hai export karne ke liye', 'warn'); return; }
+  var btn = document.getElementById('exportBtn');
+  var originalLabel = btn.innerHTML;
+  btn.disabled = true;
+  btn.innerHTML = 'Exporting...';
+
+  try {
+    if (typeof ExcelJS === 'undefined') throw new Error('Excel library load nahi hui, dobara try karo');
+
+    var wb = new ExcelJS.Workbook();
+    wb.creator = 'Ultra Fast Sheet Manager';
+    wb.created = new Date();
+    var ws = wb.addWorksheet('Sheet Data', { views: [{ state: 'frozen', ySplit: 1 }] });
+
+    // Header labels — emoji hata ke clean naam
+    var colLabels = ['#'];
+    for (var i = 0; i < visibleCols.length; i++) colLabels.push(stripEmoji(visibleCols[i].label) || ('Col' + (i+1)));
+    ws.columns = colLabels.map(function(lbl) { return { header: lbl, key: lbl, width: 14 }; });
+
+    // Rows — screen pe jo filtered data dikh raha hai wahi export hoga
+    for (var r = 0; r < filteredData.length; r++) {
+      var row = filteredData[r];
+      var rowVals = [r + 1];
+      for (var c = 0; c < visibleCols.length; c++) {
+        var col = visibleCols[c];
+        var idx = col.realIdx;
+        var val = '';
+        if (idx === VCOL_ITEM) {
+          val = row._effItem || '';
+        } else if (idx === VCOL_QTY) {
+          val = row._effQty || '';
+        } else if (col.vctype === 'status2') {
+          var hname2 = headers[idx];
+          var raw2 = (hname2 && row[hname2] !== undefined) ? row[hname2] : '';
+          val = raw2 ? classifyStatus2(raw2).label : '';
+        } else {
+          var hname = headers[idx];
+          val = (hname && row[hname] !== undefined) ? row[hname] : '';
+        }
+        var sval = String(val).trim();
+        var num = parseFloat(sval.replace(/,/g,''));
+        if (sval !== '' && !isNaN(num) && /^-?[\d,.]+$/.test(sval)) {
+          rowVals.push(num);
+        } else {
+          rowVals.push(val);
+        }
+      }
+      ws.addRow(rowVals);
+    }
+
+    // Header row styling — bold, white text, green fill (app ke theme jaisa)
+    var headerRow = ws.getRow(1);
+    headerRow.eachCell(function(cell) {
+      cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
+      cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FF0F9D77' } };
+      cell.alignment = { vertical: 'middle', horizontal: 'center', wrapText: true };
+      cell.border = { bottom: { style: 'thin', color: { argb: 'FF0A6B55' } } };
+    });
+    headerRow.height = 22;
+
+    // Column width — content ke hisaab se auto-fit
+    ws.columns.forEach(function(column) {
+      var maxLen = String(column.header || '').length;
+      column.eachCell({ includeEmpty: true }, function(cell) {
+        var len = (cell.value !== null && cell.value !== undefined) ? String(cell.value).length : 0;
+        if (len > maxLen) maxLen = len;
+      });
+      column.width = Math.min(Math.max(maxLen + 3, 9), 40);
+    });
+
+    // Autofilter + freeze header
+    ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colLabels.length } };
+
+    // Zebra striping — alternate rows halka green
+    for (var rr = 2; rr <= ws.rowCount; rr++) {
+      if (rr % 2 === 0) {
+        ws.getRow(rr).eachCell({ includeEmpty: true }, function(cell) {
+          cell.fill = { type: 'pattern', pattern: 'solid', fgColor: { argb: 'FFF1FAF6' } };
+        });
+      }
+    }
+
+    var buf = await wb.xlsx.writeBuffer();
+    var blob = new Blob([buf], { type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet' });
+
+    var ts = new Date();
+    var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
+    var fname = 'sheet_export_' + ts.getFullYear() + pad(ts.getMonth()+1) + pad(ts.getDate()) + '_' + pad(ts.getHours()) + pad(ts.getMinutes()) + '.xlsx';
+
+    // Plain browser download — kahin bhi (apni site, local file) chalega
+    var url = URL.createObjectURL(blob);
+    var a = document.createElement('a');
+    a.href = url;
+    a.download = fname;
+    document.body.appendChild(a);
+    a.click();
+    document.body.removeChild(a);
+    setTimeout(function() { URL.revokeObjectURL(url); }, 2000);
+
+    showToast('✅ Excel export ho gayi (' + filteredData.length + ' rows)!', 'ok');
+  } catch (err) {
+    if (err && err.code === 'declined') {
+      // viewer ne cancel kiya — chup rehna hai, error nahi
+    } else if (err && err.code) {
+      showToast('❌ Export fail: ' + err.code, 'err');
+      console.error(err);
+    } else {
+      showToast('❌ Export error: ' + (err && err.message ? err.message : err), 'err');
+      console.error(err);
+    }
+  } finally {
+    btn.disabled = false;
+    btn.innerHTML = originalLabel;
+  }
 }
 
 // =====================================================================
