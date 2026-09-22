@@ -109,6 +109,7 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
 .ms-item{display:flex;align-items:center;gap:6px;padding:6px 9px;font-size:11px;font-weight:500;cursor:pointer;}
 .ms-item:hover{background:#f0fdf4;}
 .ms-item input{height:auto;width:13px;}
+.ms-item-active{background:#f0fdf4;color:#166634;font-weight:800;}
 .ms-empty{padding:10px;font-size:11px;color:#9ca3af;text-align:center;}
 
 @media(max-width:768px){
@@ -190,7 +191,17 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
     <select id="filterG" onchange="onFilterChange('filterG')"><option value="">Send Item</option></select>
     <select id="filterK" onchange="onFilterChange('filterK')"><option value="">Pending Item</option></select>
     <select id="filterQ" onchange="onFilterChange('filterQ')"><option value="">Status</option></select>
-    <select id="filterQ2" onchange="onFilterChange('filterQ2')"><option value="">Status 2</option></select>
+
+    <!-- Status 2: heading sirf button pe, list mein sirf values -->
+    <div class="multiselect" id="filterQ2Wrap">
+      <button type="button" class="ms-btn" id="filterQ2Btn" onclick="toggleStatus2Dropdown()">
+        Status 2<span id="filterQ2Label"></span>
+      </button>
+      <div class="ms-panel" id="filterQ2Panel">
+        <div class="ms-list" id="filterQ2List"></div>
+      </div>
+    </div>
+
     <button class="btn-red" onclick="clearFilters()">Reset</button>
   </div>
 
@@ -228,11 +239,15 @@ var savedSheets  = [];
 var HIDDEN = {12:true, 13:true, 15:true};
 var VCOL_ITEM = -1;
 var VCOL_QTY  = -2;
-var FILTER_IDS = ['filterB','filterG','filterK','filterQ','filterQ2'];
+var FILTER_IDS = ['filterB','filterG','filterK','filterQ'];
 
 // Company multi-select state (checkbox tick filter)
 var companyAllValues = [];
 var companyChecked   = {}; // companyName -> true/false (default true = shown)
+
+// Status 2 custom single-select state (heading-only dropdown)
+var status2AllValues = [];
+var status2Selected  = ''; // '' = no filter
 
 // =====================================================================
 // CACHE HELPERS — localStorage mein data store karo
@@ -775,13 +790,13 @@ var FILTER_CFG = [
   {id:'filterB', colIdx:1,  ph:'Cust PO'},
   {id:'filterG', colIdx:6,  ph:'Send Item'},
   {id:'filterK', colIdx:10, ph:'Pending Item'},
-  {id:'filterQ', colIdx:16, ph:'Status'},
-  {id:'filterQ2', colIdx:15, ph:'Status 2'}
+  {id:'filterQ', colIdx:16, ph:'Status'}
 ];
 
 function buildFilters() {
   refreshDropdowns(allData);
   buildCompanyList(allData);
+  buildStatus2List(allData);
 }
 
 function refreshDropdowns(base) {
@@ -794,7 +809,6 @@ function refreshDropdowns(base) {
     var seen = {}, vals = [];
     for (var ri = 0; ri < base.length; ri++) {
       var v = base[ri][col];
-      if (cfg.id === 'filterQ2' && v) v = classifyStatus2(v).label; // SHORT CLOSE -> DONE merge
       if (v && String(v).trim() !== '' && !seen[v]) { seen[v]=true; vals.push(v); }
     }
     vals.sort();
@@ -889,10 +903,74 @@ function toggleCompanyDropdown() {
   panel.classList.toggle('open');
 }
 
+// =====================================================================
+// STATUS 2 — HEADING-ONLY CUSTOM DROPDOWN
+// "Status 2" sirf button ka heading hai, list mein sirf actual values
+// (CANCEL, DONE, ITEM PARTIALLY, ...) aate hain. Same value pe dobara
+// click karo to selection clear ho jaati hai.
+// =====================================================================
+function buildStatus2List(base) {
+  var col = headers[15];
+  if (!col) return;
+  var seen = {}, vals = [];
+  for (var i = 0; i < base.length; i++) {
+    var raw = base[i][col];
+    if (!raw) continue;
+    var lbl = classifyStatus2(raw).label; // SHORT CLOSE -> DONE merge yahin bhi lagu
+    if (lbl && !seen[lbl]) { seen[lbl] = true; vals.push(lbl); }
+  }
+  vals.sort();
+  status2AllValues = vals;
+  renderStatus2List();
+}
+
+function renderStatus2List() {
+  var list = document.getElementById('filterQ2List');
+  if (!list) return;
+  var html = '';
+  for (var i = 0; i < status2AllValues.length; i++) {
+    var v = status2AllValues[i];
+    var esc = v.replace(/"/g,'&quot;');
+    var escJs = v.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    var isActive = (status2Selected === v);
+    html += '<div class="ms-item' + (isActive ? ' ms-item-active' : '') + '" onclick="pickStatus2(\'' + escJs + '\')">' + esc + '</div>';
+  }
+  list.innerHTML = html || '<div class="ms-empty">Koi value nahi</div>';
+  updateStatus2BtnLabel();
+}
+
+function pickStatus2(v) {
+  status2Selected = (status2Selected === v) ? '' : v; // dobara click = clear
+  renderStatus2List();
+  document.getElementById('filterQ2Panel').classList.remove('open');
+  doSearch();
+}
+
+function updateStatus2BtnLabel() {
+  var btn  = document.getElementById('filterQ2Btn');
+  var span = document.getElementById('filterQ2Label');
+  if (!btn || !span) return;
+  if (status2Selected) {
+    span.textContent = ': ' + status2Selected;
+    btn.classList.add('filter-active');
+  } else {
+    span.textContent = '';
+    btn.classList.remove('filter-active');
+  }
+}
+
+function toggleStatus2Dropdown() {
+  document.getElementById('filterQ2Panel').classList.toggle('open');
+}
+
 document.addEventListener('click', function(e) {
   if (!e.target.closest('#filterDWrap')) {
     var panel = document.getElementById('filterDPanel');
     if (panel) panel.classList.remove('open');
+  }
+  if (!e.target.closest('#filterQ2Wrap')) {
+    var panel2 = document.getElementById('filterQ2Panel');
+    if (panel2) panel2.classList.remove('open');
   }
   if (!e.target.closest('.searchbox')) document.getElementById('suggestions').style.display='none';
 });
@@ -905,7 +983,7 @@ function doSearch() {
   var bv=document.getElementById('filterB').value;
   var gv=document.getElementById('filterG').value, kv=document.getElementById('filterK').value;
   var qv=document.getElementById('filterQ').value;
-  var qv2=document.getElementById('filterQ2').value;
+  var qv2=status2Selected;
   var colB=headers[1], colD=headers[3], colG=headers[6], colK=headers[10], colQ=headers[16], colQ2=headers[15];
   filteredData = [];
   for (var i = 0; i < allData.length; i++) {
@@ -924,6 +1002,7 @@ function doSearch() {
   renderTable(filteredData, false);
   updateStats(filteredData);
   refreshDropdowns(filteredData);
+  buildStatus2List(filteredData);
   buildSuggestions(text);
 }
 
@@ -989,6 +1068,8 @@ function clearFilters() {
     applyFilterStyle(FILTER_IDS[i]);
   }
   companySelectAll();
+  status2Selected = '';
+  renderStatus2List();
   doSearch();
 }
 
