@@ -96,10 +96,27 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
 .toast.warn{background:#92400e;color:#fff;}
 .toast.err{background:#dc2626;color:#fff;}
 
+/* Company multi-select checkbox dropdown */
+.multiselect{position:relative;display:inline-block;}
+.ms-btn{height:31px;padding:0 10px;border:1px solid #d1d5db;border-radius:7px;background:#fff;font-size:11px;font-weight:600;color:#111827;cursor:pointer;display:flex;align-items:center;gap:4px;white-space:nowrap;}
+.ms-btn.filter-active{border-color:#0F9D77;background:#f0fdf4;color:#166634;font-weight:700;}
+.ms-panel{position:absolute;top:34px;left:0;width:220px;background:#fff;border:1px solid #e5e7eb;border-radius:8px;box-shadow:0 5px 20px rgba(0,0,0,.12);z-index:999;display:none;}
+.ms-panel.open{display:block;}
+.ms-actions{display:flex;gap:5px;padding:6px;border-bottom:1px solid #f1f5f9;}
+.ms-actions button{flex:1;height:24px;padding:0 4px;font-size:10px;background:#f3f4f6;color:#111827;font-weight:700;}
+.ms-actions button:hover{background:#e5e7eb;}
+.ms-list{max-height:220px;overflow-y:auto;padding:4px 0;}
+.ms-item{display:flex;align-items:center;gap:6px;padding:6px 9px;font-size:11px;font-weight:500;cursor:pointer;}
+.ms-item:hover{background:#f0fdf4;}
+.ms-item input{height:auto;width:13px;}
+.ms-empty{padding:10px;font-size:11px;color:#9ca3af;text-align:center;}
+
 @media(max-width:768px){
   .connect-row,.toolbar,.refresh-panel{flex-direction:column;}
   #sheetName,#savedSheets,#search,#webAppUrl{width:100%;}
   button,.btn-refresh{width:100%;}
+  .multiselect,.ms-btn{width:100%;}
+  .ms-panel{width:100%;}
 }
 </style>
 </head>
@@ -155,7 +172,21 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
       <div class="suggestions" id="suggestions"></div>
     </div>
     <select id="filterB" onchange="onFilterChange('filterB')"><option value="">Cust PO</option></select>
-    <select id="filterD" onchange="onFilterChange('filterD')"><option value="">Company</option></select>
+
+    <!-- Company: tick/checkbox multi-select -->
+    <div class="multiselect" id="filterDWrap">
+      <button type="button" class="ms-btn" id="filterDBtn" onclick="toggleCompanyDropdown()">
+        Company <span id="filterDCount"></span>
+      </button>
+      <div class="ms-panel" id="filterDPanel">
+        <div class="ms-actions">
+          <button type="button" onclick="companySelectAll()">All</button>
+          <button type="button" onclick="companySelectNone()">None</button>
+        </div>
+        <div class="ms-list" id="filterDList"></div>
+      </div>
+    </div>
+
     <select id="filterG" onchange="onFilterChange('filterG')"><option value="">Send Item</option></select>
     <select id="filterK" onchange="onFilterChange('filterK')"><option value="">Pending Item</option></select>
     <select id="filterQ" onchange="onFilterChange('filterQ')"><option value="">Status</option></select>
@@ -197,7 +228,11 @@ var savedSheets  = [];
 var HIDDEN = {12:true, 13:true, 15:true};
 var VCOL_ITEM = -1;
 var VCOL_QTY  = -2;
-var FILTER_IDS = ['filterB','filterD','filterG','filterK','filterQ','filterQ2'];
+var FILTER_IDS = ['filterB','filterG','filterK','filterQ','filterQ2'];
+
+// Company multi-select state (checkbox tick filter)
+var companyAllValues = [];
+var companyChecked   = {}; // companyName -> true/false (default true = shown)
 
 // =====================================================================
 // CACHE HELPERS — localStorage mein data store karo
@@ -631,6 +666,21 @@ function hideProgress() {
 }
 
 // =====================================================================
+// STATUS 2 NORMALIZATION — "SHORT CLOSE" ko "DONE" mein merge karo
+// (filter dropdown, matching, aur cell display teeno jagah)
+// =====================================================================
+function classifyStatus2(rawVal) {
+  var sv = String(rawVal || '').trim().toUpperCase();
+  if (sv === 'SHORT CLOSE') sv = 'DONE'; // 👈 merge rule
+  var lc = sv.toLowerCase();
+  var cls = 'pending';
+  if (lc.indexOf('done') !== -1 || lc.indexOf('deliver') !== -1) cls = 'delivered';
+  if (lc.indexOf('partial') !== -1) cls = 'partial';
+  if (lc.indexOf('cancel')  !== -1) cls = 'cancelled';
+  return {label: sv, cls: cls};
+}
+
+// =====================================================================
 // RENDER TABLE
 // =====================================================================
 function renderTable(data, animate) {
@@ -688,12 +738,8 @@ function renderTable(data, animate) {
       if (col.vctype === 'status2') {
         var hname2 = headers[idx];
         var raw2   = (hname2 && row[hname2] !== undefined) ? row[hname2] : '';
-        var sv2 = String(raw2).toLowerCase();
-        var sc2 = 'pending';
-        if (sv2.indexOf('deliver') !== -1) sc2 = 'delivered';
-        if (sv2.indexOf('partial') !== -1) sc2 = 'partial';
-        if (sv2.indexOf('cancel')  !== -1) sc2 = 'cancelled';
-        var display2 = raw2 ? '<span class="status-pill ' + sc2 + '">' + raw2 + '</span>' : '—';
+        var norm2  = classifyStatus2(raw2);
+        var display2 = raw2 ? '<span class="status-pill ' + norm2.cls + '">' + norm2.label + '</span>' : '—';
         html += '<td title="' + String(raw2).replace(/"/g,'&quot;') + '">' + display2 + '</td>';
         continue;
       }
@@ -727,14 +773,17 @@ function renderTable(data, animate) {
 // =====================================================================
 var FILTER_CFG = [
   {id:'filterB', colIdx:1,  ph:'Cust PO'},
-  {id:'filterD', colIdx:3,  ph:'Company'},
   {id:'filterG', colIdx:6,  ph:'Send Item'},
   {id:'filterK', colIdx:10, ph:'Pending Item'},
   {id:'filterQ', colIdx:16, ph:'Status'},
   {id:'filterQ2', colIdx:15, ph:'Status 2'}
 ];
 
-function buildFilters()      { refreshDropdowns(allData); }
+function buildFilters() {
+  refreshDropdowns(allData);
+  buildCompanyList(allData);
+}
+
 function refreshDropdowns(base) {
   for (var fi = 0; fi < FILTER_CFG.length; fi++) {
     var cfg = FILTER_CFG[fi];
@@ -745,6 +794,7 @@ function refreshDropdowns(base) {
     var seen = {}, vals = [];
     for (var ri = 0; ri < base.length; ri++) {
       var v = base[ri][col];
+      if (cfg.id === 'filterQ2' && v) v = classifyStatus2(v).label; // SHORT CLOSE -> DONE merge
       if (v && String(v).trim() !== '' && !seen[v]) { seen[v]=true; vals.push(v); }
     }
     vals.sort();
@@ -757,11 +807,102 @@ function refreshDropdowns(base) {
 }
 
 // =====================================================================
+// COMPANY TICK / CHECKBOX FILTER
+// Sabhi companies by default checked (dikhengi). Jise nahi chahiye
+// (jaise "Dahnuka"), uska tick hata do — wo rows automatically hide ho jayengi.
+// =====================================================================
+function buildCompanyList(base) {
+  var col = headers[3];
+  if (!col) return;
+  var seen = {}, vals = [];
+  for (var i = 0; i < base.length; i++) {
+    var v = base[i][col];
+    if (v && String(v).trim() !== '' && !seen[v]) { seen[v] = true; vals.push(v); }
+  }
+  vals.sort();
+  var newChecked = {};
+  for (var j = 0; j < vals.length; j++) {
+    var name = vals[j];
+    newChecked[name] = companyChecked.hasOwnProperty(name) ? companyChecked[name] : true;
+  }
+  companyAllValues = vals;
+  companyChecked   = newChecked;
+  renderCompanyList();
+}
+
+function renderCompanyList() {
+  var list = document.getElementById('filterDList');
+  var html = '';
+  for (var i = 0; i < companyAllValues.length; i++) {
+    var v = companyAllValues[i];
+    var checked = companyChecked[v] ? 'checked' : '';
+    var esc = v.replace(/"/g,'&quot;');
+    var escJs = v.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
+    html += '<label class="ms-item" title="' + esc + '">' +
+              '<input type="checkbox" ' + checked + ' onchange="toggleCompanyValue(\'' + escJs + '\')"> ' +
+              esc +
+            '</label>';
+  }
+  list.innerHTML = html || '<div class="ms-empty">Koi company nahi mili</div>';
+  updateCompanyBtnLabel();
+}
+
+function toggleCompanyValue(v) {
+  companyChecked[v] = !companyChecked[v];
+  updateCompanyBtnLabel();
+  doSearch();
+}
+
+function companySelectAll() {
+  for (var i = 0; i < companyAllValues.length; i++) companyChecked[companyAllValues[i]] = true;
+  renderCompanyList();
+  doSearch();
+}
+
+function companySelectNone() {
+  for (var i = 0; i < companyAllValues.length; i++) companyChecked[companyAllValues[i]] = false;
+  renderCompanyList();
+  doSearch();
+}
+
+function updateCompanyBtnLabel() {
+  var total = companyAllValues.length;
+  var uncheckedCount = 0;
+  for (var i = 0; i < companyAllValues.length; i++) {
+    if (!companyChecked[companyAllValues[i]]) uncheckedCount++;
+  }
+  var checkedCount = total - uncheckedCount;
+  var btn = document.getElementById('filterDBtn');
+  var countSpan = document.getElementById('filterDCount');
+  if (!btn || !countSpan) return;
+  if (uncheckedCount === 0 || total === 0) {
+    countSpan.textContent = '';
+    btn.classList.remove('filter-active');
+  } else {
+    countSpan.textContent = '(' + checkedCount + '/' + total + ')';
+    btn.classList.add('filter-active');
+  }
+}
+
+function toggleCompanyDropdown() {
+  var panel = document.getElementById('filterDPanel');
+  panel.classList.toggle('open');
+}
+
+document.addEventListener('click', function(e) {
+  if (!e.target.closest('#filterDWrap')) {
+    var panel = document.getElementById('filterDPanel');
+    if (panel) panel.classList.remove('open');
+  }
+  if (!e.target.closest('.searchbox')) document.getElementById('suggestions').style.display='none';
+});
+
+// =====================================================================
 // SEARCH
 // =====================================================================
 function doSearch() {
   var text = document.getElementById('search').value.toLowerCase().trim();
-  var bv=document.getElementById('filterB').value, dv=document.getElementById('filterD').value;
+  var bv=document.getElementById('filterB').value;
   var gv=document.getElementById('filterG').value, kv=document.getElementById('filterK').value;
   var qv=document.getElementById('filterQ').value;
   var qv2=document.getElementById('filterQ2').value;
@@ -771,11 +912,13 @@ function doSearch() {
     var row = allData[i];
     if (text && row._search.indexOf(text)===-1) continue;
     if (bv && row[colB]!==bv) continue;
-    if (dv && row[colD]!==dv) continue;
+    // Company tick filter — unchecked company ki rows hide
+    var dval = row[colD];
+    if (dval && companyChecked.hasOwnProperty(dval) && companyChecked[dval] === false) continue;
     if (gv && row[colG]!==gv) continue;
     if (kv && row[colK]!==kv) continue;
     if (qv && row[colQ]!==qv) continue;
-    if (qv2 && row[colQ2]!==qv2) continue;
+    if (qv2 && classifyStatus2(row[colQ2]).label !== qv2) continue;
     filteredData.push(row);
   }
   renderTable(filteredData, false);
@@ -817,10 +960,6 @@ function pickSuggestion(v) {
   doSearch();
 }
 
-document.addEventListener('click', function(e) {
-  if (!e.target.closest('.searchbox')) document.getElementById('suggestions').style.display='none';
-});
-
 // =====================================================================
 // STATS
 // =====================================================================
@@ -849,6 +988,7 @@ function clearFilters() {
     document.getElementById(FILTER_IDS[i]).value = '';
     applyFilterStyle(FILTER_IDS[i]);
   }
+  companySelectAll();
   doSearch();
 }
 
