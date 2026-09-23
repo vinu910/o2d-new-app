@@ -192,12 +192,16 @@ td.vcol-qty .src.si{background:#fef08a;color:#713f12;}
     <select id="filterK" onchange="onFilterChange('filterK')"><option value="">Pending Item</option></select>
     <select id="filterQ" onchange="onFilterChange('filterQ')"><option value="">Status</option></select>
 
-    <!-- Status 2: heading sirf button pe, list mein sirf values -->
+    <!-- Status 2: tick/checkbox multi-select -->
     <div class="multiselect" id="filterQ2Wrap">
       <button type="button" class="ms-btn" id="filterQ2Btn" onclick="toggleStatus2Dropdown()">
-        Status 2<span id="filterQ2Label"></span>
+        Status 2 <span id="filterQ2Count"></span>
       </button>
       <div class="ms-panel" id="filterQ2Panel">
+        <div class="ms-actions">
+          <button type="button" onclick="status2SelectAll()">All</button>
+          <button type="button" onclick="status2SelectNone()">None</button>
+        </div>
         <div class="ms-list" id="filterQ2List"></div>
       </div>
     </div>
@@ -247,9 +251,9 @@ var FILTER_IDS = ['filterB','filterG','filterK','filterQ'];
 var companyAllValues = [];
 var companyChecked   = {}; // companyName -> true/false (default true = shown)
 
-// Status 2 custom single-select state (heading-only dropdown)
+// Status 2 multi-select state (checkbox tick filter)
 var status2AllValues = [];
-var status2Selected  = ''; // '' = no filter
+var status2Checked   = {}; // statusLabel -> true/false (default true = shown)
 
 // =====================================================================
 // CACHE HELPERS — localStorage mein data store karo
@@ -578,8 +582,6 @@ function processData(parsed) {
 
 // =====================================================================
 // LOAD SHEET — Stale-while-revalidate strategy
-// 1. Cache data turant dikhao (instant)
-// 2. Background mein fresh data fetch karo
 // =====================================================================
 function loadSheet() {
   var link      = document.getElementById('sheetLink').value.trim();
@@ -588,7 +590,6 @@ function loadSheet() {
 
   var sheetId = extractSheetId(link);
 
-  // STEP 1: Cache se instant display
   var cached = loadFromCache(sheetId, sheetName);
   if (cached && cached.rows && cached.rows.length) {
     var ageSeconds = getCacheAge(sheetId, sheetName);
@@ -598,19 +599,15 @@ function loadSheet() {
 
     processData(cached);
     document.getElementById('thead').removeAttribute('data-loaded');
-    renderTable(filteredData, false); // no animation for stale
+    renderTable(filteredData, false);
     buildFilters();
     updateStats(filteredData);
     setBadge('⚡ Cache');
     setStatus('Cache se: ' + cached.rows.length + ' rows (age: ' + ageStr + ') — Fresh data aa raha hai...');
 
-    // Stale banner dikhao
     document.getElementById('staleBanner').classList.add('visible');
-
-    // Progress bar show karo
     showProgress();
   } else {
-    // Koi cache nahi — normal loading state
     setBadge('Loading...');
     setStatus('Data fetch ho raha hai...');
     document.getElementById('tbody').innerHTML = '<tr><td class="loading-msg">⚡ Loading...</td></tr>';
@@ -619,7 +616,6 @@ function loadSheet() {
     showProgress();
   }
 
-  // STEP 2: Background mein fresh data fetch
   localStorage.setItem('lastSheet', JSON.stringify({link: link, name: sheetName}));
 
   loadGvizJsonp(sheetId, sheetName,
@@ -635,13 +631,11 @@ function loadSheet() {
         return;
       }
 
-      // Cache mein save karo
       saveToCache(sheetId, sheetName, parsed);
 
-      // Process & render fresh data
       processData(parsed);
       document.getElementById('thead').removeAttribute('data-loaded');
-      renderTable(filteredData, true); // with animation = fresh
+      renderTable(filteredData, true);
       buildFilters();
       updateStats(filteredData);
       setBadge('✅ Live');
@@ -652,7 +646,6 @@ function loadSheet() {
       hideProgress();
       document.getElementById('staleBanner').classList.remove('visible');
 
-      // Agar cache data tha toh error sirf toast mein dikhao
       if (allData.length > 0) {
         setBadge('⚠️ Offline');
         setStatus('⚠️ Fresh data nahi aaya (' + err.message + ') — Cache data dikh raha hai');
@@ -684,11 +677,10 @@ function hideProgress() {
 
 // =====================================================================
 // STATUS 2 NORMALIZATION — "SHORT CLOSE" ko "DONE" mein merge karo
-// (filter dropdown, matching, aur cell display teeno jagah)
 // =====================================================================
 function classifyStatus2(rawVal) {
   var sv = String(rawVal || '').trim().toUpperCase();
-  if (sv === 'SHORT CLOSE') sv = 'DONE'; // 👈 merge rule
+  if (sv === 'SHORT CLOSE') sv = 'DONE';
   var lc = sv.toLowerCase();
   var cls = 'pending';
   if (lc.indexOf('done') !== -1 || lc.indexOf('deliver') !== -1) cls = 'delivered';
@@ -723,13 +715,11 @@ function renderTable(data, animate) {
     thead.setAttribute('data-loaded', '1');
   }
 
-  // Animation class add/remove
   if (animate) { table.classList.add('fresh-load'); }
   else { table.classList.remove('fresh-load'); }
 
   var colQ = headers[16];
   var html = '';
-  // ⚡ DocumentFragment virtual DOM — faster rendering
   for (var ri = 0; ri < data.length; ri++) {
     var row = data[ri];
     html += '<tr><td>' + (ri+1) + '</td>';
@@ -779,7 +769,6 @@ function renderTable(data, animate) {
   }
   tbody.innerHTML = html;
 
-  // Remove animation class after done (reset for next time)
   if (animate) {
     setTimeout(function() { table.classList.remove('fresh-load'); }, 500);
   }
@@ -824,8 +813,6 @@ function refreshDropdowns(base) {
 
 // =====================================================================
 // COMPANY TICK / CHECKBOX FILTER
-// Sabhi companies by default checked (dikhengi). Jise nahi chahiye
-// (jaise "Dahnuka"), uska tick hata do — wo rows automatically hide ho jayengi.
 // =====================================================================
 function buildCompanyList(base) {
   var col = headers[3];
@@ -906,10 +893,9 @@ function toggleCompanyDropdown() {
 }
 
 // =====================================================================
-// STATUS 2 — HEADING-ONLY CUSTOM DROPDOWN
-// "Status 2" sirf button ka heading hai, list mein sirf actual values
-// (CANCEL, DONE, ITEM PARTIALLY, ...) aate hain. Same value pe dobara
-// click karo to selection clear ho jaati hai.
+// STATUS 2 — TICK / CHECKBOX MULTI-SELECT FILTER
+// FIX: list ab hamesha ALLDATA se build hoti hai (list kabhi shrink nahi hogi),
+// sirf checked/unchecked state se rows filter hoti hain.
 // =====================================================================
 function buildStatus2List(base) {
   var col = headers[15];
@@ -922,7 +908,13 @@ function buildStatus2List(base) {
     if (lbl && !seen[lbl]) { seen[lbl] = true; vals.push(lbl); }
   }
   vals.sort();
+  var newChecked = {};
+  for (var j = 0; j < vals.length; j++) {
+    var name = vals[j];
+    newChecked[name] = status2Checked.hasOwnProperty(name) ? status2Checked[name] : false;
+  }
   status2AllValues = vals;
+  status2Checked   = newChecked;
   renderStatus2List();
 }
 
@@ -932,32 +924,51 @@ function renderStatus2List() {
   var html = '';
   for (var i = 0; i < status2AllValues.length; i++) {
     var v = status2AllValues[i];
+    var checked = status2Checked[v] ? 'checked' : '';
     var esc = v.replace(/"/g,'&quot;');
     var escJs = v.replace(/\\/g,'\\\\').replace(/'/g,"\\'");
-    var isActive = (status2Selected === v);
-    html += '<div class="ms-item' + (isActive ? ' ms-item-active' : '') + '" onclick="pickStatus2(\'' + escJs + '\')">' + esc + '</div>';
+    html += '<label class="ms-item" title="' + esc + '">' +
+              '<input type="checkbox" ' + checked + ' onchange="toggleStatus2Value(\'' + escJs + '\')"> ' +
+              esc +
+            '</label>';
   }
   list.innerHTML = html || '<div class="ms-empty">Koi value nahi</div>';
   updateStatus2BtnLabel();
 }
 
-function pickStatus2(v) {
-  status2Selected = (status2Selected === v) ? '' : v; // dobara click = clear
+function toggleStatus2Value(v) {
+  status2Checked[v] = !status2Checked[v];
+  updateStatus2BtnLabel();
+  doSearch();
+}
+
+function status2SelectAll() {
+  for (var i = 0; i < status2AllValues.length; i++) status2Checked[status2AllValues[i]] = true;
   renderStatus2List();
-  document.getElementById('filterQ2Panel').classList.remove('open');
+  doSearch();
+}
+
+function status2SelectNone() {
+  for (var i = 0; i < status2AllValues.length; i++) status2Checked[status2AllValues[i]] = false;
+  renderStatus2List();
   doSearch();
 }
 
 function updateStatus2BtnLabel() {
-  var btn  = document.getElementById('filterQ2Btn');
-  var span = document.getElementById('filterQ2Label');
-  if (!btn || !span) return;
-  if (status2Selected) {
-    span.textContent = ': ' + status2Selected;
-    btn.classList.add('filter-active');
-  } else {
-    span.textContent = '';
+  var total = status2AllValues.length;
+  var checkedCount = 0;
+  for (var i = 0; i < status2AllValues.length; i++) {
+    if (status2Checked[status2AllValues[i]]) checkedCount++;
+  }
+  var btn = document.getElementById('filterQ2Btn');
+  var countSpan = document.getElementById('filterQ2Count');
+  if (!btn || !countSpan) return;
+  if (checkedCount === 0 || total === 0) {
+    countSpan.textContent = '';
     btn.classList.remove('filter-active');
+  } else {
+    countSpan.textContent = '(' + checkedCount + '/' + total + ')';
+    btn.classList.add('filter-active');
   }
 }
 
@@ -985,26 +996,31 @@ function doSearch() {
   var bv=document.getElementById('filterB').value;
   var gv=document.getElementById('filterG').value, kv=document.getElementById('filterK').value;
   var qv=document.getElementById('filterQ').value;
-  var qv2=status2Selected;
   var colB=headers[1], colD=headers[3], colG=headers[6], colK=headers[10], colQ=headers[16], colQ2=headers[15];
+  var status2AnyChecked = false;
+  for (var sk in status2Checked) { if (status2Checked[sk]) { status2AnyChecked = true; break; } }
   filteredData = [];
   for (var i = 0; i < allData.length; i++) {
     var row = allData[i];
     if (text && row._search.indexOf(text)===-1) continue;
     if (bv && row[colB]!==bv) continue;
-    // Company tick filter — unchecked company ki rows hide
     var dval = row[colD];
     if (dval && companyChecked.hasOwnProperty(dval) && companyChecked[dval] === false) continue;
     if (gv && row[colG]!==gv) continue;
     if (kv && row[colK]!==kv) continue;
     if (qv && row[colQ]!==qv) continue;
-    if (qv2 && classifyStatus2(row[colQ2]).label !== qv2) continue;
+    if (status2AnyChecked) {
+      var q2label = classifyStatus2(row[colQ2]).label;
+      if (!status2Checked[q2label]) continue;
+    }
     filteredData.push(row);
   }
   renderTable(filteredData, false);
   updateStats(filteredData);
   refreshDropdowns(filteredData);
-  buildStatus2List(filteredData);
+  // NOTE: buildStatus2List(filteredData) yahan se HATA diya —
+  // ab list allData se hi fixed rahegi (checkboxes kabhi hide nahi honge),
+  // sirf checked state se rows filter/hide hongi.
   buildSuggestions(text);
 }
 
@@ -1070,14 +1086,12 @@ function clearFilters() {
     applyFilterStyle(FILTER_IDS[i]);
   }
   companySelectAll();
-  status2Selected = '';
-  renderStatus2List();
+  status2SelectAll();
   doSearch();
 }
 
 // =====================================================================
-// EXPORT TO EXCEL — jo table abhi screen pe dikh rahi hai (filtered)
-// wahi headings ke saath badiya formatted .xlsx export hoti hai
+// EXPORT TO EXCEL
 // =====================================================================
 function stripEmoji(s) {
   return String(s || '').replace(/[\u{1F300}-\u{1FAFF}\u{2600}-\u{27BF}]/gu, '').trim();
@@ -1098,12 +1112,10 @@ async function exportToExcel() {
     wb.created = new Date();
     var ws = wb.addWorksheet('Sheet Data', { views: [{ state: 'frozen', ySplit: 1 }] });
 
-    // Header labels — emoji hata ke clean naam
     var colLabels = ['#'];
     for (var i = 0; i < visibleCols.length; i++) colLabels.push(stripEmoji(visibleCols[i].label) || ('Col' + (i+1)));
     ws.columns = colLabels.map(function(lbl) { return { header: lbl, key: lbl, width: 14 }; });
 
-    // Rows — screen pe jo filtered data dikh raha hai wahi export hoga
     for (var r = 0; r < filteredData.length; r++) {
       var row = filteredData[r];
       var rowVals = [r + 1];
@@ -1134,7 +1146,6 @@ async function exportToExcel() {
       ws.addRow(rowVals);
     }
 
-    // Header row styling — bold, white text, green fill (app ke theme jaisa)
     var headerRow = ws.getRow(1);
     headerRow.eachCell(function(cell) {
       cell.font = { bold: true, color: { argb: 'FFFFFFFF' }, size: 11 };
@@ -1144,7 +1155,6 @@ async function exportToExcel() {
     });
     headerRow.height = 22;
 
-    // Column width — content ke hisaab se auto-fit
     ws.columns.forEach(function(column) {
       var maxLen = String(column.header || '').length;
       column.eachCell({ includeEmpty: true }, function(cell) {
@@ -1154,10 +1164,8 @@ async function exportToExcel() {
       column.width = Math.min(Math.max(maxLen + 3, 9), 40);
     });
 
-    // Autofilter + freeze header
     ws.autoFilter = { from: { row: 1, column: 1 }, to: { row: 1, column: colLabels.length } };
 
-    // Zebra striping — alternate rows halka green
     for (var rr = 2; rr <= ws.rowCount; rr++) {
       if (rr % 2 === 0) {
         ws.getRow(rr).eachCell({ includeEmpty: true }, function(cell) {
@@ -1173,7 +1181,6 @@ async function exportToExcel() {
     var pad = function(n) { return n < 10 ? '0' + n : '' + n; };
     var fname = 'sheet_export_' + ts.getFullYear() + pad(ts.getMonth()+1) + pad(ts.getDate()) + '_' + pad(ts.getHours()) + pad(ts.getMinutes()) + '.xlsx';
 
-    // Plain browser download — kahin bhi (apni site, local file) chalega
     var url = URL.createObjectURL(blob);
     var a = document.createElement('a');
     a.href = url;
