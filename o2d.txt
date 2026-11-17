@@ -894,7 +894,7 @@ function toggleCompanyDropdown() {
 
 // =====================================================================
 // STATUS 2 — TICK / CHECKBOX MULTI-SELECT FILTER
-// FIX: list ab hamesha ALLDATA se build hoti hai (list kabhi shrink nahi hogi),
+// List hamesha ALLDATA se build hoti hai (kabhi shrink nahi hogi),
 // sirf checked/unchecked state se rows filter hoti hain.
 // =====================================================================
 function buildStatus2List(base) {
@@ -1009,6 +1009,9 @@ function doSearch() {
     if (gv && row[colG]!==gv) continue;
     if (kv && row[colK]!==kv) continue;
     if (qv && row[colQ]!==qv) continue;
+    // Status = Pending select ho to Status 2 DONE / SHORT CLOSE wali rows nahi aayengi
+    if (qv && String(qv).toLowerCase().indexOf('pending') !== -1 &&
+        classifyStatus2(row[colQ2]).label === 'DONE') continue;
     if (status2AnyChecked) {
       var q2label = classifyStatus2(row[colQ2]).label;
       if (!status2Checked[q2label]) continue;
@@ -1018,9 +1021,6 @@ function doSearch() {
   renderTable(filteredData, false);
   updateStats(filteredData);
   refreshDropdowns(filteredData);
-  // NOTE: buildStatus2List(filteredData) yahan se HATA diya —
-  // ab list allData se hi fixed rahegi (checkboxes kabhi hide nahi honge),
-  // sirf checked state se rows filter/hide hongi.
   buildSuggestions(text);
 }
 
